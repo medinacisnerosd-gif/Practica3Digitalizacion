@@ -1,2 +1,69 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include "ThingSpeak.h"
+
+const char* ssid = "1D3";
+const char* pass = "1D3_2019";
+
+WiFiClient cliente;
+ESP8266WebServer server(80);
+
+#define ldr A0
+#define LED_PIN D4
+
+long ledOnTime = 0;
+bool ledEncendido = false;
+
+unsigned long lastTS = 0;
+const unsigned long TS_PERIOD = 15000;
+
+void handleAlerta() {
+  String zona = server.arg("zona");
+  Serial.println("Alerta recibida desde ThingSpeak");
+  if (zona != "") Serial.println("Zona: " + zona);
+  digitalWrite(LED_PIN, LOW);          // <-- cambiado (LOW = encender LED interno)
+  ledEncendido = true;
+  ledOnTime = millis();
+  server.send(200, "text/plain", "Alerta recibida");
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(ldr, INPUT);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, HIGH);         // cambiado (HIGH = LED apagado al inicio)
+
+  WiFi.begin(ssid, pass);
+  Serial.print("Conectando a WiFi");
+  while (WiFi.status() != WL_CONNECTED) { delay(300); Serial.print("."); }
+  Serial.println(); Serial.print("IP asignada: "); Serial.println(WiFi.localIP());
+
+  ThingSpeak.begin(cliente);
+
+  server.on("/alerta", handleAlerta);
+  server.begin();
+  Serial.println("Servidor web iniciado");
+}
+
+void loop() {
+  server.handleClient();
+
+  // Si el LED está encendido, esperamos 10 s y lo apagamos
+  if (ledEncendido) {
+    delay(10000);               // Espera 10 s
+    digitalWrite(LED_PIN, HIGH); // Apaga el LED interno (activo LOW)
+    ledEncendido = false;
+    Serial.println("LED apagado automaticamente");
+  }
+
+  // Enviar lectura del LDR a ThingSpeak cada 15 s
+  int valor = analogRead(ldr);
+  ThingSpeak.setField(1, valor);
+  int http = ThingSpeak.writeFields( 3099288, "KWEEEC0G2RSYADIP");
+  Serial.print(http); Serial.print("  LDR="); Serial.println(valor);
+
+  delay(15000);  // Espera 15 s antes de la siguiente lectura/envío
+}
+
+
+
